@@ -8,13 +8,9 @@ import {
 } from '../services/MangaService'
 import './MangaDashboard.css'
 
-/* ─── helpers ─────────────────────────────────── */
 const EMPTY_FORM = { title: '', author: '', genre: '', status: 'Ongoing', url: '', imageUrl: '' }
 
-/* ════════════════════════════════════════════════
-   MAIN COMPONENT
-   ════════════════════════════════════════════════ */
-export default function MangaDashboard({ onLogout }) {
+export default function MangaDashboard({ user, onLogout }) {
   const [list,    setList]    = useState([])
   const [form,    setForm]    = useState(EMPTY_FORM)
   const [selId,   setSelId]   = useState(null)
@@ -24,14 +20,15 @@ export default function MangaDashboard({ onLogout }) {
   const [saving,  setSaving]  = useState(false)
   const [error,   setError]   = useState('')
 
-  // ── initial load ──
-  useEffect(() => {
-    loadAll()
-  }, [])
+  const isAdmin = user?.role === 'admin'
 
-  // ── realtime subscription ──
+  useEffect(() => { loadAll() }, [])
+
   useEffect(() => {
     const channel = subscribeToManga(({ eventType, newRow, oldRow }) => {
+      if (!isAdmin && eventType !== 'DELETE' && newRow?.user_id !== user?.id) return
+      if (!isAdmin && eventType === 'DELETE' && oldRow?.user_id !== user?.id) return
+
       if (eventType === 'INSERT') {
         setList(prev => prev.some(m => m.id === newRow.id) ? prev : [normalize(newRow), ...prev])
       }
@@ -60,7 +57,6 @@ export default function MangaDashboard({ onLogout }) {
     }
   }
 
-  // ── normalize DB row → component shape ──
   function normalize(row) {
     return {
       id:       row.id,
@@ -70,12 +66,12 @@ export default function MangaDashboard({ onLogout }) {
       status:   row.status    ?? 'Ongoing',
       url:      row.url       ?? '',
       imageUrl: row.image_url ?? '',
+      userId:   row.user_id,
     }
   }
 
   const selected = list.find(m => m.id === selId) ?? null
 
-  // ── filtered + searched view ──
   const visible = useMemo(() => {
     const q = search.toLowerCase()
     return list.filter(m => {
@@ -92,7 +88,6 @@ export default function MangaDashboard({ onLogout }) {
   const ongoing  = list.filter(m => m.status === 'Ongoing').length
   const finished = list.filter(m => m.status === 'Finished').length
 
-  // ── form helpers ──
   const setField = (k, v) => setForm(p => ({ ...p, [k]: v }))
 
   const handleSelect = (manga) => {
@@ -107,7 +102,6 @@ export default function MangaDashboard({ onLogout }) {
     })
   }
 
-  // ── ADD — let realtime update the list ──
   const handleAdd = async () => {
     if (!form.title.trim()) return
     setSaving(true)
@@ -123,7 +117,6 @@ export default function MangaDashboard({ onLogout }) {
     }
   }
 
-  // ── EDIT — let realtime update the list ──
   const handleEdit = async () => {
     if (!selId || !form.title.trim()) return
     setSaving(true)
@@ -137,7 +130,6 @@ export default function MangaDashboard({ onLogout }) {
     }
   }
 
-  // ── DELETE ──
   const handleDelete = async () => {
     if (!selId) return
     if (!window.confirm(`Delete "${selected?.title}"?`)) return
@@ -154,19 +146,9 @@ export default function MangaDashboard({ onLogout }) {
     }
   }
 
-  const handleClear = () => {
-    setSelId(null)
-    setForm(EMPTY_FORM)
-    setError('')
-  }
+  const handleClear = () => { setSelId(null); setForm(EMPTY_FORM); setError('') }
+  const handleLogout = () => { if (window.confirm('Return to login?')) onLogout() }
 
-  const handleLogout = () => {
-    if (window.confirm('Return to login?')) onLogout()
-  }
-
-  /* ════════════════════════════════════════════════
-     RENDER
-     ════════════════════════════════════════════════ */
   return (
     <div className="dash">
       {/* ── Header ── */}
@@ -191,12 +173,18 @@ export default function MangaDashboard({ onLogout }) {
             <div className="dash-stat-lbl">Finished</div>
           </div>
         </div>
-        <button className="dash-logout-btn" onClick={handleLogout}>
-          ↩ LOGOUT
-        </button>
+        <div className="dash-header-right">
+          <div className="dash-user-info">
+            <span className="dash-username">{user?.username}</span>
+            <span className={`dash-role-badge ${isAdmin ? 'admin' : 'user'}`}>
+              {isAdmin ? 'ADMIN' : 'USER'}
+            </span>
+          </div>
+          <button className="dash-logout-btn" onClick={handleLogout}>↩ LOGOUT</button>
+        </div>
       </header>
 
-      {/* ── Global error banner ── */}
+      {/* ── Error banner ── */}
       {error && (
         <div className="dash-error-banner">
           ⚠ {error}
@@ -206,7 +194,6 @@ export default function MangaDashboard({ onLogout }) {
 
       {/* ── Body ── */}
       <div className="dash-body">
-        {/* ── Left detail panel ── */}
         <aside className="detail-panel">
           {selected ? (
             <>
@@ -230,9 +217,7 @@ export default function MangaDashboard({ onLogout }) {
                 {selected.url && selected.url !== '-' && (
                   <div className="detail-row">
                     <label>Website</label>
-                    <a href={selected.url} target="_blank" rel="noopener noreferrer">
-                      Open link ↗
-                    </a>
+                    <a href={selected.url} target="_blank" rel="noopener noreferrer">Open link ↗</a>
                   </div>
                 )}
               </div>
@@ -245,11 +230,8 @@ export default function MangaDashboard({ onLogout }) {
           )}
         </aside>
 
-        {/* ── Main content ── */}
         <main className="dash-main">
-          {/* ── Form ── */}
           <div className="manga-form">
-            {/* Row 1 */}
             <div className="form-row">
               <FormField label="Manga Title" value={form.title}
                 onChange={v => setField('title', v)} placeholder="e.g. One Piece" />
@@ -262,7 +244,6 @@ export default function MangaDashboard({ onLogout }) {
                 <button className="form-btn delete" onClick={handleDelete} disabled={saving || !selId}>DEL</button>
               </div>
             </div>
-            {/* Row 2 */}
             <div className="form-row">
               <FormField label="Genre" value={form.genre}
                 onChange={v => setField('genre', v)} placeholder="e.g. Action, Fantasy" />
@@ -280,7 +261,6 @@ export default function MangaDashboard({ onLogout }) {
                 <button className="form-btn clear" onClick={handleClear}>CLEAR</button>
               </div>
             </div>
-            {/* Row 3 */}
             <div className="form-row">
               <FormField label="Website URL" value={form.url}
                 onChange={v => setField('url', v)} placeholder="https://..." />
@@ -290,15 +270,10 @@ export default function MangaDashboard({ onLogout }) {
             </div>
           </div>
 
-          {/* ── Toolbar ── */}
           <div className="dash-toolbar">
             <div className="filter-btns">
               {['All', 'Ongoing', 'Finished'].map(f => (
-                <button
-                  key={f}
-                  className={`filter-btn${filter === f ? ' active' : ''}`}
-                  onClick={() => setFilter(f)}
-                >
+                <button key={f} className={`filter-btn${filter === f ? ' active' : ''}`} onClick={() => setFilter(f)}>
                   {f}
                   {f === 'Ongoing'  && <span className="filter-badge">{ongoing}</span>}
                   {f === 'Finished' && <span className="filter-badge">{finished}</span>}
@@ -307,16 +282,12 @@ export default function MangaDashboard({ onLogout }) {
             </div>
             <div className="search-wrap">
               <span className="search-icon">🔍</span>
-              <input
-                className="search-input"
-                value={search}
+              <input className="search-input" value={search}
                 onChange={e => setSearch(e.target.value)}
-                placeholder="Search title, author, genre…"
-              />
+                placeholder="Search title, author, genre…" />
             </div>
           </div>
 
-          {/* ── Table ── */}
           {loading ? (
             <div className="table-empty">
               <span style={{ fontSize: 32 }}>⏳</span>
@@ -331,19 +302,11 @@ export default function MangaDashboard({ onLogout }) {
             <div className="table-wrap">
               <table>
                 <thead>
-                  <tr>
-                    {['#', 'Title', 'Genre', 'Author', 'Status', 'URL'].map(h => (
-                      <th key={h}>{h}</th>
-                    ))}
-                  </tr>
+                  <tr>{['#', 'Title', 'Genre', 'Author', 'Status', 'URL'].map(h => <th key={h}>{h}</th>)}</tr>
                 </thead>
                 <tbody>
                   {visible.map((m, i) => (
-                    <tr
-                      key={m.id}
-                      className={m.id === selId ? 'tr-selected' : ''}
-                      onClick={() => handleSelect(m)}
-                    >
+                    <tr key={m.id} className={m.id === selId ? 'tr-selected' : ''} onClick={() => handleSelect(m)}>
                       <td className="td-num">{i + 1}</td>
                       <td className="td-title">{m.title}</td>
                       <td className="td-sub">{m.genre  || '—'}</td>
@@ -373,7 +336,6 @@ export default function MangaDashboard({ onLogout }) {
   )
 }
 
-/* ─── Sub-components ──────────────────────────── */
 function DetailRow({ label, value, valueStyle = {} }) {
   return (
     <div className="detail-row">
@@ -387,11 +349,7 @@ function FormField({ label, value, onChange, placeholder }) {
   return (
     <div className="form-field">
       <label>{label}</label>
-      <input
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        placeholder={placeholder}
-      />
+      <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} />
     </div>
   )
 }

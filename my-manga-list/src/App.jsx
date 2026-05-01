@@ -1,46 +1,42 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import LoginWindow from './components/LoginWindow'
 import MangaDashboard from './components/MangaDashboard'
+import { login, register, clearSession, getSession } from './services/MangaService'
 import './App.css'
 
-const ADMIN_USER = 'adiieeuu'
-const ADMIN_PASS = 'adrianpaul3114'
-const SESSION_KEY = 'manga_admin_session'
-
-function simpleHash(str) {
-  let h = 0
-  for (let i = 0; i < str.length; i++) {
-    h = (Math.imul(31, h) + str.charCodeAt(i)) | 0
-  }
-  return h.toString()
-}
-
-const CORRECT_HASH = simpleHash(ADMIN_PASS)
-
 export default function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(() => {
-    return sessionStorage.getItem(SESSION_KEY) === 'true'
-  })
+  const [user, setUser] = useState(() => getSession())
 
-  const handleLogin = (username, password) => {
-    if (username === ADMIN_USER && simpleHash(password) === CORRECT_HASH) {
-      sessionStorage.setItem(SESSION_KEY, 'true')
-      setIsLoggedIn(true)
-      return true
+  const handleLogin = async (username, password) => {
+    try {
+      const data = await login(username, password)
+      setUser(data)
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: err.message }
     }
-    return false
+  }
+
+  const handleRegister = async (username, password) => {
+    try {
+      const data = await register(username, password)
+      setUser(data)
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: err.message }
+    }
   }
 
   const handleLogout = () => {
-    sessionStorage.removeItem(SESSION_KEY)
-    setIsLoggedIn(false)
+    clearSession()
+    setUser(null)
   }
 
   return (
     <div className="app-root">
-      {isLoggedIn
-        ? <MangaDashboard onLogout={handleLogout} />
-        : <LoginWindow onLogin={handleLogin} />
+      {user
+        ? <MangaDashboard user={user} onLogout={handleLogout} />
+        : <LoginWindow onLogin={handleLogin} onRegister={handleRegister} />
       }
     </div>
   )

@@ -4,32 +4,123 @@
 
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = 'https://bkqbiqsmtflgcujbtiyn.supabase.co'
-const supabaseKey = 'sb_publishable_cuZW3wzmnfqFEOvmjjmthQ_Mu1O58mY'
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 export const supabase = createClient(supabaseUrl, supabaseKey)
 
-// ── Table name ────────────────────────────────────────
-const TABLE = 'manga_list'
+const TABLE       = 'manga_list'
+const USERS_TABLE = 'users'
 
 // ─────────────────────────────────────────────────────
-//  FETCH — get all manga, newest first
+//  SESSION HELPERS
+// ─────────────────────────────────────────────────────
+const SESSION_KEY = 'manga_session'
+
+export function saveSession(user) {
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify(user))
+}
+
+export function getSession() {
+  try {
+    return JSON.parse(sessionStorage.getItem(SESSION_KEY))
+  } catch {
+    return null
+  }
+}
+
+export function clearSession() {
+  sessionStorage.removeItem(SESSION_KEY)
+}
+
+export function isAdmin() {
+  const session = getSession()
+  return session?.role === 'admin'
+}
+
+// ─────────────────────────────────────────────────────
+//  SIMPLE HASH
+// ─────────────────────────────────────────────────────
+function simpleHash(str) {
+  let h = 0
+  for (let i = 0; i < str.length; i++) {
+    h = (Math.imul(31, h) + str.charCodeAt(i)) | 0
+  }
+  return h.toString()
+}
+
+// ─────────────────────────────────────────────────────
+//  LOGIN
+// ─────────────────────────────────────────────────────
+export async function login(username, password) {
+  const hash = simpleHash(password)
+
+  const { data, error } = await supabase
+    .from(USERS_TABLE)
+    .select('*')
+    .eq('username', username)
+    .eq('password', hash)
+    .maybeSingle()
+
+  if (error) throw new Error(error.message)
+  if (!data) throw new Error('Invalid credentials')
+
+  saveSession(data)
+  return data
+}
+
+// ─────────────────────────────────────────────────────
+//  REGISTER
+// ─────────────────────────────────────────────────────
+export async function register(username, password) {
+  if (!username.trim() || !password.trim()) throw new Error('Username and password required')
+  if (password.length < 6) throw new Error('Password must be at least 6 characters')
+
+  const hash = simpleHash(password)
+
+  // Check if username already exists
+  const { data: existing } = await supabase
+    .from(USERS_TABLE)
+    .select('id')
+    .eq('username', username)
+    .maybeSingle()
+
+  if (existing) throw new Error('Username already taken')
+
+  const { data, error } = await supabase
+    .from(USERS_TABLE)
+    .insert([{ username, password: hash, role: 'user' }])
+    .select()
+    .single()
+
+  if (error) throw new Error(error.message)
+
+  saveSession(data)
+  return data
+}
+
+// ─────────────────────────────────────────────────────
+//  FETCH — admin sees all, user sees own only
 // ─────────────────────────────────────────────────────
 export async function fetchManga() {
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select('*')
-    .order('created_at', { ascending: false })
+  const session = getSession()
+  let query = supabase.from(TABLE).select('*').order('created_at', { ascending: false })
 
+  if (session?.role !== 'admin') {
+    query = query.eq('user_id', session?.id)
+  }
+
+  const { data, error } = await query
   if (error) throw new Error(`fetchManga: ${error.message}`)
   return data
 }
 
 // ─────────────────────────────────────────────────────
-//  ADD — insert a new manga row
+//  ADD
 // ─────────────────────────────────────────────────────
 export async function addManga(manga) {
-  const payload = sanitize(manga)
+  const session = getSession()
+  const payload = { ...sanitize(manga), user_id: session?.id }
 
   const { data, error } = await supabase
     .from(TABLE)
@@ -42,7 +133,7 @@ export async function addManga(manga) {
 }
 
 // ─────────────────────────────────────────────────────
-//  EDIT — update an existing row by id
+//  EDIT
 // ─────────────────────────────────────────────────────
 export async function editManga(id, updates) {
   const payload = sanitize(updates)
@@ -59,7 +150,7 @@ export async function editManga(id, updates) {
 }
 
 // ─────────────────────────────────────────────────────
-//  DELETE — remove a row by id
+//  DELETE
 // ─────────────────────────────────────────────────────
 export async function deleteManga(id) {
   const { error } = await supabase
@@ -71,43 +162,7 @@ export async function deleteManga(id) {
 }
 
 // ─────────────────────────────────────────────────────
-//  SEARCH — filter on title / author / genre server-side
-// ─────────────────────────────────────────────────────
-export async function searchManga(query) {
-  const q = query.trim()
-  if (!q) return fetchManga()
-
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select('*')
-    .or(
-      `title.ilike.%${q}%,` +
-      `author.ilike.%${q}%,` +
-      `genre.ilike.%${q}%`
-    )
-    .order('created_at', { ascending: false })
-
-  if (error) throw new Error(`searchManga: ${error.message}`)
-  return data
-}
-
-// ─────────────────────────────────────────────────────
-//  FILTER BY STATUS  ('Ongoing' | 'Finished' | 'All')
-// ─────────────────────────────────────────────────────
-export async function filterByStatus(status) {
-  let query = supabase.from(TABLE).select('*').order('created_at', { ascending: false })
-
-  if (status !== 'All') {
-    query = query.eq('status', status)
-  }
-
-  const { data, error } = await query
-  if (error) throw new Error(`filterByStatus: ${error.message}`)
-  return data
-}
-
-// ─────────────────────────────────────────────────────
-//  REALTIME — subscribe to live changes on the table
+//  REALTIME
 // ─────────────────────────────────────────────────────
 export function subscribeToManga(onChange) {
   const channel = supabase
@@ -129,33 +184,12 @@ export function subscribeToManga(onChange) {
 }
 
 // ─────────────────────────────────────────────────────
-//  AUTH HELPERS
-// ─────────────────────────────────────────────────────
-export async function signIn(email, password) {
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-  if (error) throw new Error(`signIn: ${error.message}`)
-  return data.session
-}
-
-export async function signOut() {
-  const { error } = await supabase.auth.signOut()
-  if (error) throw new Error(`signOut: ${error.message}`)
-}
-
-export async function getSession() {
-  const { data } = await supabase.auth.getSession()
-  return data.session
-}
-
-// ─────────────────────────────────────────────────────
-//  INTERNAL — strip unknown keys, map imageUrl → image_url
+//  INTERNAL
 // ─────────────────────────────────────────────────────
 function sanitize(fields) {
   const allowed = ['title', 'author', 'genre', 'status', 'url', 'image_url']
   const out = {}
-
   if (fields.imageUrl !== undefined) fields.image_url = fields.imageUrl
-
   for (const key of allowed) {
     if (fields[key] !== undefined) {
       out[key] = typeof fields[key] === 'string' ? fields[key].trim() : fields[key]

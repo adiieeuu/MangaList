@@ -495,3 +495,36 @@ td a:hover { text-decoration: underline; }
   transition: opacity .15s;
 }
 .dash-error-banner button:hover { opacity: 1; }
+
+.dash-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.dash-user-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dash-username {
+  font-size: 13px;
+  color: var(--txt-sub);
+  font-weight: 500;
+}
+.dash-role-badge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  padding: 3px 8px;
+  border-radius: 20px;
+}
+.dash-role-badge.admin {
+  background: rgba(126,87,194,.2);
+  color: #b39ddb;
+  border: 1px solid rgba(126,87,194,.4);
+}
+.dash-role-badge.user {
+  background: rgba(66,165,245,.15);
+  color: var(--blue);
+  border: 1px solid rgba(66,165,245,.3);
+}

@@ -471,3 +471,27 @@ td a:hover { text-decoration: underline; }
 }
 
 .table-empty p { color: var(--txt-muted); font-size: 13px; }
+
+.dash-error-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(239,83,80,.12);
+  border-bottom: 1px solid var(--red);
+  color: var(--red);
+  font-size: 13px;
+  padding: 8px 22px;
+  flex-shrink: 0;
+  gap: 12px;
+}
+.dash-error-banner button {
+  background: transparent;
+  border: none;
+  color: var(--red);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 4px;
+  opacity: .7;
+  transition: opacity .15s;
+}
+.dash-error-banner button:hover { opacity: 1; }
